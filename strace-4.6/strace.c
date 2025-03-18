@@ -2210,7 +2210,13 @@ trace()
 		if (interactive)
 			sigprocmask(SIG_BLOCK, &blocked_set, NULL);
 
-		if (pid == -1) {
+		if (pid_to_attach > 0) {
+			int status = kill(pid_to_attach, 0);
+			if (status != 0) {
+				/* if we could not send checkup signal, process is gone */
+				return 0;
+			}
+		} else if (pid == -1) {
 			switch (wait_errno) {
 			case EINTR:
 				continue;

@@ -532,7 +532,7 @@ startup_attach(void)
 }
 
 static void
-startup_child (char **argv)
+startup_child (char **argv, int pid_to_attach)
 {
 	struct stat statbuf;
 	const char *filename;
@@ -622,12 +622,18 @@ startup_child (char **argv)
 			progname, filename, path_to_search);
 		exit(1);
 	}
-	strace_child = pid = fork();
-	if (pid < 0) {
-		perror("strace: fork");
-		cleanup();
-		exit(1);
+
+	if (pid_to_attach > 0) {
+		strace_child = pid = pid_to_attach;
+	} else {
+		strace_child = pid = fork();
+		if (pid < 0) {
+			perror("strace: fork");
+			cleanup();
+			exit(1);
+		}
 	}
+
 	if ((pid != 0 && daemonized_tracer) /* parent: to become a traced process */
 	 || (pid == 0 && !daemonized_tracer) /* child: to become a traced process */
 	) {
@@ -3034,7 +3040,7 @@ int main (int argc, char *argv[]) {
 	   Also we do not need to be protected by them as during interruption
 	   in the STARTUP_CHILD mode we kill the spawned process anyway.  */
 	if (!pflag_seen)
-		startup_child(&argv[optind]);
+		startup_child(&argv[optind], pid_to_attach);
 
 	sigemptyset(&empty_set);
 	sigemptyset(&blocked_set);

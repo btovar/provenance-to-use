@@ -129,7 +129,7 @@ unsigned int ptrace_setoptions = 0;
 int dtime = 0, xflag = 0, qflag = 1; // pgbovine - turn on quiet mode (-q) by
                                      // default to shut up terminal line noise
 cflag_t cflag = CFLAG_NONE;
-static int iflag = 0, interactive = 0, pflag_seen = 0, rflag = 0, tflag = 0;
+static int iflag = 0, interactive = 0, pflag_seen = 0, rflag = 0, tflag = 0, pid_to_attach = -1;
 /*
  * daemonized_tracer supports -D option.
  * With this option, strace forks twice.
@@ -2684,7 +2684,7 @@ int main (int argc, char *argv[]) {
 #ifndef USE_PROCFS
 		"D"
 #endif
-		"a:e:o:O:u:E:i:p:P:I:")) != EOF) {
+		"A:a:e:o:O:u:E:i:p:P:I:")) != EOF) {
 		switch (c) {
 		case 'c':
       // pgbovine - hijack for -c option
@@ -2855,6 +2855,9 @@ int main (int argc, char *argv[]) {
 		case 'w':
 			/*CDE_network_content_mode = 1;*/
 			break;
+		case 'A':
+			pid_to_attach = atoi(optarg);
+			break;
 		default:
 			usage(stderr, 1);
 			break;
@@ -2888,7 +2891,7 @@ int main (int argc, char *argv[]) {
 	qualify("verbose=all");
 	qualify("signal=all");
 
-	if ((optind == argc) == !pflag_seen)
+	if (((optind == argc) == !pflag_seen) && pid_to_attach < 0)
 		usage(stderr, 1);
 
 	if (pflag_seen && daemonized_tracer) {
@@ -2983,6 +2986,34 @@ int main (int argc, char *argv[]) {
 	   0			1		1		1
 	 */
 
+
+	if (pid_to_attach > 0) {
+		// If attaching to a pid, then pretend that the executable name
+		// was given in argv. We construct new argvs accordingly.
+		// so that the rest of code does not change.
+		
+		char pid_symlink_name[MAXPATHLEN];
+		char pid_symlink_exe[MAXPATHLEN];
+		int pid_symlink_status;
+
+		snprintf(pid_symlink_exe, MAXPATHLEN, "/proc/%d/exe", pid_to_attach);
+		pid_symlink_status = readlink(pid_symlink_exe, pid_symlink_name, MAXPATHLEN);
+		if (pid_symlink_status < 0) {
+			perror("strace: exec readlink");
+			exit(1);
+		}
+		perror(pid_symlink_name);
+
+		char **new_argv = malloc(2 * sizeof(char *));
+		new_argv[0] = malloc(MAXPATHLEN * sizeof(char));
+		new_argv[1] = malloc(MAXPATHLEN * sizeof(char));
+
+		strncpy(new_argv[0], argv[0], MAXPATHLEN);
+		strncpy(new_argv[1], pid_symlink_name, MAXPATHLEN);
+
+		argv = new_argv;
+		optind = 1;
+	}
 
 	// pgbovine - do all CDE initialization here after command-line options
 	// have been processed (argv[optind] is the name of the target program)

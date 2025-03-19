@@ -129,7 +129,7 @@ unsigned int ptrace_setoptions = 0;
 int dtime = 0, xflag = 0, qflag = 1; // pgbovine - turn on quiet mode (-q) by
                                      // default to shut up terminal line noise
 cflag_t cflag = CFLAG_NONE;
-static int iflag = 0, interactive = 0, pflag_seen = 0, rflag = 0, tflag = 0, pid_to_attach = -1;
+static int iflag = 0, interactive = 0, pflag_seen = 0, rflag = 0, tflag = 0, pid_to_attach = -1, stop_tracing_from_signal = 0;
 /*
  * daemonized_tracer supports -D option.
  * With this option, strace forks twice.
@@ -1570,7 +1570,11 @@ cleanup()
 			detach(tcp, 0);
 		else {
 			kill(tcp->pid, SIGCONT);
-			kill(tcp->pid, SIGTERM);
+
+			if (pid_to_attach < 0) {
+				// don't kill the traced processed unless we created them
+				kill(tcp->pid, SIGTERM);
+			}
 		}
 	}
 	if (cflag)
@@ -2211,6 +2215,10 @@ trace()
 			sigprocmask(SIG_BLOCK, &blocked_set, NULL);
 
 		if (pid_to_attach > 0) {
+			if (stop_tracing_from_signal) {
+				return 0;
+			}
+
 			int status = kill(pid_to_attach, 0);
 			if (status != 0) {
 				/* if we could not send checkup signal, process is gone */
@@ -2636,6 +2644,10 @@ mp_ioctl(int fd, int cmd, void *arg, int size)
 
 #endif
 
+static void stop_tracing_sig_handler(int signo) {
+	stop_tracing_from_signal = 1;
+}
+
 /*******************************************************************************
  * PUBLIC INTERFACE
  ******************************************************************************/
@@ -3050,7 +3062,14 @@ int main (int argc, char *argv[]) {
 
 	sigemptyset(&empty_set);
 	sigemptyset(&blocked_set);
-	sa.sa_handler = SIG_IGN;
+
+	if (pid_to_attach > 0) {
+		// If attaching to an external pid, stop tracing when receiving a signal
+		sa.sa_handler = stop_tracing_sig_handler;
+	}
+	else {
+		sa.sa_handler = SIG_IGN;
+	}
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = 0;
 	sigaction(SIGTTOU, &sa, NULL);
@@ -3068,10 +3087,11 @@ int main (int argc, char *argv[]) {
 #endif /* SUNOS4 */
 	}
 	sigaction(SIGHUP, &sa, NULL);
+	sigaction(SIGPIPE, &sa, NULL);
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGQUIT, &sa, NULL);
-	sigaction(SIGPIPE, &sa, NULL);
 	sigaction(SIGTERM, &sa, NULL);
+
 #ifdef USE_PROCFS
 	sa.sa_handler = reaper;
 	sigaction(SIGCHLD, &sa, NULL);

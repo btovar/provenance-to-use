@@ -636,8 +636,11 @@ startup_child (char **argv, int pid_to_attach)
 
 	if ((pid != 0 && daemonized_tracer) /* parent: to become a traced process */
 	 || (pid == 0 && !daemonized_tracer) /* child: to become a traced process */
+	 || (pid == pid_to_attach) /* external to become a traced process */
 	) {
-		pid = getpid();
+		if (pid == 0) {
+			pid = getpid();
+		}
 #ifdef USE_PROCFS
 		if (outf != stderr) close (fileno (outf));
 #ifdef MIPS
@@ -657,9 +660,16 @@ startup_child (char **argv, int pid_to_attach)
 			close(fileno (outf));
 
 		if (!daemonized_tracer) {
-			if (ptrace(PTRACE_TRACEME, 0, (char *) 1, 0) < 0) {
-				perror("strace: ptrace(PTRACE_TRACEME, ...)");
-				exit(1);
+			if (pid_to_attach < 0 ) {
+				if (ptrace(PTRACE_TRACEME, 0, (char *) 1, 0) < 0) {
+					perror("strace: ptrace(PTRACE_TRACEME, ...)");
+					exit(1);
+				}
+			} else {
+				if (ptrace(PTRACE_ATTACH, pid_to_attach, (char *) 1, 0) < 0) {
+					perror("strace: ptrace(PTRACE_ATTACH, ...)");
+					exit(1);
+				}
 			}
 			if (debug)
 				kill(pid, SIGSTOP);
@@ -704,8 +714,11 @@ startup_child (char **argv, int pid_to_attach)
 			 * Unless of course we're on a no-MMU system where
 			 * we vfork()-ed, so we cannot stop the child.
 			 */
-			if (!strace_vforked)
+			if (pid_to_attach > 0) {
+				kill(pid_to_attach, SIGSTOP);
+			} else if (!strace_vforked) {
 				kill(getpid(), SIGSTOP);
+			}
 		} else {
 			struct sigaction sv_sigchld;
 			sigaction(SIGCHLD, NULL, &sv_sigchld);
@@ -740,10 +753,12 @@ startup_child (char **argv, int pid_to_attach)
       }
     }
 
-		execvp(pathname, argv);
-fprintf(stderr, "%s %d\n", pathname, cde_exec_from_outside_cderoot);
-		perror("strace: exec");
-		_exit(1);
+		if (pid_to_attach < 0) {
+			execvp(pathname, argv);
+			fprintf(stderr, "%s %d\n", pathname, cde_exec_from_outside_cderoot);
+			perror("strace: exec");
+			_exit(1);
+		}
 	}
 
 	/* We are the tracer.  */
@@ -2925,6 +2940,13 @@ int main (int argc, char *argv[]) {
 		exit(1);
 	}
 
+	if (pid_to_attach > 0 && daemonized_tracer) {
+		fprintf(stderr,
+			"%s: -D and -A are mutually exclusive options\n",
+			progname);
+		exit(1);
+	}
+
 	if (!followfork)
 		followfork = optF;
 
@@ -3105,7 +3127,7 @@ int main (int argc, char *argv[]) {
 	sigaction(SIGCHLD, &sa, NULL);
 #endif /* USE_PROCFS */
 
-	if (pflag_seen || daemonized_tracer)
+	if (pflag_seen || daemonized_tracer || pid_to_attach > 0)
 		startup_attach();
 
 	if (trace() < 0)

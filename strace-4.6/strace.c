@@ -2231,13 +2231,13 @@ trace()
 
 		if (pid_to_attach > 0) {
 			if (stop_tracing_from_signal) {
-				return 0;
+				break;
 			}
 
 			int status = kill(pid_to_attach, 0);
 			if (status != 0) {
 				/* if we could not send checkup signal, process is gone */
-				return 0;
+				break;
 			}
 		} else if (pid == -1) {
 			switch (wait_errno) {

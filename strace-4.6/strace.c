@@ -129,7 +129,9 @@ unsigned int ptrace_setoptions = 0;
 int dtime = 0, xflag = 0, qflag = 1; // pgbovine - turn on quiet mode (-q) by
                                      // default to shut up terminal line noise
 cflag_t cflag = CFLAG_NONE;
-static int iflag = 0, interactive = 0, pflag_seen = 0, rflag = 0, tflag = 0, pid_to_attach = -1, stop_tracing_from_signal = 0;
+static int iflag = 0, interactive = 0, pflag_seen = 0, rflag = 0, tflag = 0;
+static int pid_to_attach = -1, pid_to_attach_signal = -1, stop_tracing_from_signal = 0;
+
 /*
  * daemonized_tracer supports -D option.
  * With this option, strace forks twice.
@@ -527,8 +529,10 @@ startup_attach(void)
 				tcp->pid);
 	}
 
-	if (interactive)
+	if (interactive) {
 		sigprocmask(SIG_SETMASK, &empty_set, NULL);
+	}
+
 }
 
 static void
@@ -2895,7 +2899,7 @@ int main (int argc, char *argv[]) {
 			/*CDE_network_content_mode = 1;*/
 			break;
 		case 'A':
-			pid_to_attach = atoi(optarg);
+			sscanf(optarg, "%d,%d", &pid_to_attach, &pid_to_attach_signal);
 			break;
 		default:
 			usage(stderr, 1);
@@ -3129,6 +3133,11 @@ int main (int argc, char *argv[]) {
 
 	if (pflag_seen || daemonized_tracer || pid_to_attach > 0)
 		startup_attach();
+
+	if (pid_to_attach > 0 && pid_to_attach_signal > -1) {
+		/* send requested signal to external pid */
+		kill(pid_to_attach, pid_to_attach_signal);
+	}
 
 	if (trace() < 0)
 		exit(1);
